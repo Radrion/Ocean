@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<meta charset="UTF-8" />
+<title>Ocean — Cybersecurity Query Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  :root {
+    --bg-editor: #1e1e1e;
+    --bg-sidebar: #252526;
+    --bg-titlebar: #2d2d2d;
+    --border: #3c3c3c;
+    --text-main: #d4d4d4;
+    --text-muted: #858585;
+    --blue-keyword: #569cd6;
+    --blue-accent: #007acc;
+    --teal-value: #4ec9b0;
+    --orange-string: #ce9178;
+    --green-comment: #6a9955;
+    --yellow-func: #dcdcaa;
+    --red-error: #f14c4c;
+    --purple: #c586c0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg-editor);
+    color: var(--text-main);
+    font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .titlebar {
+    background: var(--bg-titlebar);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .dot-red { background: #ff5f56; }
+  .dot-yellow { background: #ffbd2e; }
+  .dot-green { background: #27c93f; }
+  .titlebar-text { color: var(--text-muted); font-size: 13px; margin-left: 8px; }
+
+  .body-layout { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Sidebar (Claude-style chat history) ── */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header { padding: 12px; border-bottom: 1px solid var(--border); }
+  .new-chat-btn {
+    width: 100%;
+    background: var(--blue-accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .new-chat-btn:hover { background: #1177bb; }
+  .session-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .session-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-main);
+    cursor: pointer;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    border-left: 2px solid transparent;
+  }
+  .session-item:hover { background: #2a2d2e; }
+  .session-item.active { background: #094771; border-left: 2px solid var(--blue-accent); }
+  .session-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .session-delete {
+    color: var(--text-muted);
+    font-size: 14px;
+    flex-shrink: 0;
+    opacity: 0;
+    padding: 2px 4px;
+  }
+  .session-item:hover .session-delete { opacity: 1; }
+  .session-delete:hover { color: var(--red-error); }
+  .sidebar-empty { color: var(--text-muted); font-size: 12px; padding: 12px; text-align: center; }
+
+  /* ── Main area ── */
+  .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    background: var(--bg-editor);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .tab-btn.active { background: #094771; border-color: var(--blue-accent); color: white; }
+
+  .page { display: none; flex: 1; overflow: hidden; padding: 20px; }
+  .page.active { display: flex; flex-direction: column; }
+  .page-scroll { flex: 1; overflow: auto; padding: 20px; }
+
+  .card {
+    background: var(--bg-editor);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .card-header {
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .card-body { padding: 16px; }
+
+  input[type="text"], textarea {
+    background: #3c3c3c;
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  textarea { width: 100%; resize: vertical; }
+
+  button.btn {
+    background: var(--blue-accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  button.btn:hover { background: #1177bb; }
+  button.btn:disabled { opacity: 0.6; cursor: default; }
+  button.btn.ghost { background: transparent; color: var(--blue-keyword); border: 1px solid var(--border); }
+  button.btn.green { background: #16825d; }
+  button.btn.green:hover { background: #1f9d72; }
+
+  pre.sql-block {
+    background: #181818;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    color: var(--text-main);
+    margin: 8px 0 0;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg-sidebar); color: var(--blue-keyword); }
+  tr:hover td { background: #2a2d2e; }
+
+  .risk-badge { border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; text-align: center; }
+  .risk-critical { color: var(--red-error); border-color: #4d1f1f; background: #4d1f1f33; }
+  .risk-high { color: #ffab70; border-color: #4d2f1a; background: #4d2f1a33; }
+  .risk-medium { color: var(--yellow-func); border-color: #4d3d1a; background: #4d3d1a33; }
+  .risk-low { color: var(--blue-keyword); border-color: #1a3d4d; background: #1a3d4d33; }
+  .risk-info { color: var(--text-muted); border-color: #3c3c3c; background: #3c3c3c33; }
+
+  .field-row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .field-label { color: var(--blue-keyword); }
+
+  .checklist-item { display: flex; gap: 10px; padding: 8px 0; font-size: 13px; line-height: 1.5; }
+  .error-banner { background: #4d1f1f33; border: 1px solid #4d1f1f; color: var(--red-error); padding: 8px 14px; font-size: 12px; border-radius: 4px; }
+
+  .single-value { font-size: 28px; padding: 10px 0; color: var(--teal-value); }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; }
+  .bar-label { width: 140px; text-align: right; color: var(--text-muted); flex-shrink: 0; }
+  .bar-track { flex: 1; background: #2a2d2e; border-radius: 4px; overflow: hidden; height: 18px; }
+  .bar-fill { background: var(--blue-accent); height: 100%; }
+  .bar-value { width: 50px; color: var(--teal-value); }
+
+  /* ── Chat ── */
+  .chat-container { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .chat-empty { color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px; }
+  .msg-row { display: flex; gap: 10px; max-width: 85%; }
+  .msg-row.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg-avatar {
+    width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; background: var(--bg-sidebar); border: 1px solid var(--border);
+  }
+  .msg-bubble { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.5; }
+  .msg-row.user .msg-bubble { background: #0e3a5c; border-color: var(--blue-accent); }
+  .thinking { color: var(--text-muted); font-style: italic; }
+  .thinking::after {
+    content: ""; display: inline-block; width: 6px; height: 6px;
+    margin-left: 6px; border-radius: 50%; background: var(--blue-accent);
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
+  .chat-input-row { display: flex; gap: 8px; padding: 12px; background: var(--bg-sidebar); border-top: 1px solid var(--border); flex-shrink: 0; }
+  .chat-input-row input { flex: 1; }
+/* ── Loading & Login screens ── */
+  #loading-screen, #login-screen {
+    position: fixed; inset: 0;
+    background: var(--bg-editor);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .boot-logo {
+    font-size: 42px;
+    margin-bottom: 8px;
+  }
+  .boot-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: #cccccc;
+    text-align: center;
+  }
+  .boot-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 4px;
+  }
+  .boot-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+  .spinner {
+    width: 34px; height: 34px;
+    border: 3px solid var(--border);
+    border-top-color: var(--blue-accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    margin: 18px 0 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .login-card {
+    width: 420px;
+    max-width: 90vw;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 30px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .login-section-title {
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--blue-keyword);
+    margin: 16px 0 8px;
+    text-transform: uppercase;
+  }
+  .login-field { margin-bottom: 10px; }
+  .login-field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .login-field input {
+    width: 100%;
+    padding: 9px 10px;
+  }
+  .login-connect-btn {
+    width: 100%;
+    margin-top: 14px;
+    padding: 10px;
+    font-size: 14px;
+  }
+  .advanced-toggle {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-top: 12px;
+    text-align: center;
+    text-decoration: underline;
+  }
+  #app-screen {
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+.sidebar { width: 280px; flex-shrink: 0; display: flex; overflow: hidden; }
+  .sidebar-rail {
+    width: 44px; flex-shrink: 0;
+    background: var(--bg-titlebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 10px; gap: 6px;
+  }
+  .rail-icon {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; cursor: pointer; font-size: 16px;
+    color: var(--text-muted);
+  }
+  .rail-icon:hover { background: #2a2d2e; }
+  .rail-icon.active { background: #094771; color: white; }
+  .sidebar-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-sidebar); }
+  .sidebar-panel-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+  .Ocean-icon { display: inline-block; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── LOADING SCREEN ───────────────────────── -->
+ <svg width="0" height="0" style="position:absolute;">
+  <defs>
+    <linearGradient id="OceanSwirl" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9fd8ff"/>
+      <stop offset="55%" stop-color="#569cd6"/>
+      <stop offset="100%" stop-color="#d9d9d9"/>
+    </linearGradient>
+  </defs>
+</svg>
+<div id="loading-screen">
+  <div class="boot-center">
+        <div class="boot-logo">
+      <svg class="ocean-icon" width="42" height="42" viewBox="0 0 24 24">
+        <path d="M12 3a9 9 0 1 0 9 9c0-2.8-1.9-4.6-4.6-4.6A4.6 4.6 0 1 0 12 12"
+              fill="none" stroke="url(#oceanSwirl)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="boot-title">Ocean</div>
+    <div class="boot-subtitle">Cybersecurity Query Assistant</div>
+    <div class="spinner"></div>
+    <div class="boot-subtitle" id="loading-status">Checking connection…</div>
+  </div>
+</div>
+
+<!-- ───────────────────────── LOGIN SCREEN ───────────────────────── -->
+<div id="login-screen" style="display:none;">
+  <div class="login-card">
+    <div class="boot-center" style="margin-bottom:6px;">
+            <div class="boot-logo">
+        <svg class="Ocean-icon" width="32" height="32" viewBox="0 0 24 24">
+          <path d="M12 3a9 9 0 1 0 9 9c0-2.8-1.9-4.6-4.6-4.6A4.6 4.6 0 1 0 12 12"
+                fill="none" stroke="url(#OceanSwirl)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="boot-title" style="font-size:18px;">Connect to Wazuh</div>
+      <div class="boot-subtitle">Enter your credentials to start Ocean</div>
+    </div>
+
+    <div id="login-error"></div>
+
+    <div class="login-section-title">Wazuh Manager</div>
+    <div class="login-field">
+      <label>Username</label>
+      <input type="text" id="wazuh-username" placeholder="wazuh" />
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="wazuh-password" placeholder="••••••••" />
+    </div>
+
+    <div class="login-section-title">Wazuh Indexer</div>
+    <div class="login-field">
+      <label>Username</label>
+      <input type="text" id="indexer-username" placeholder="admin" />
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="indexer-password" placeholder="••••••••" />
+    </div>
+
+    <div class="advanced-toggle" onclick="toggleAdvanced()">Show connection URLs</div>
+    <div id="advanced-fields" style="display:none;">
+      <div class="login-field">
+        <label>Manager URL</label>
+        <input type="text" id="manager-url" placeholder="https://localhost:55000" />
+      </div>
+      <div class="login-field">
+        <label>Indexer URL</label>
+        <input type="text" id="indexer-url" placeholder="https://localhost:9200" />
+      </div>
+    </div>
+
+    <button class="btn login-connect-btn" id="connect-btn" onclick="submitLogin()">Connect</button>
+  </div>
+</div>
+
+<!-- ───────────────────────── MAIN APP (wraps existing titlebar + body-layout) ───────────────────────── -->
+<div id="app-screen">
+
+<div class="titlebar">
+  <span class="dot dot-red"></span>
+  <span class="dot dot-yellow"></span>
+  <span class="dot dot-green"></span>
+  <span class="titlebar-text">Ocean — Cybersecurity Query Assistant — Wazuh SIEM</span>
+</div>
+
+<div class="body-layout">
+
+  <!-- ───────────────────────── SIDEBAR ───────────────────────── -->
+  <div class="sidebar">
+  <div class="sidebar-rail">
+    <div class="rail-icon active" id="rail-chats" onclick="switchSidebarPanel('chats')" title="Chats">💬</div>
+    <div class="rail-icon" id="rail-model" onclick="switchSidebarPanel('model')" title="Model Settings">⚙️</div>
+  </div>
+  <div class="sidebar-panel">
+    <!-- Chats panel -->
+    <div id="panel-chats" class="sidebar-panel-content">
+      <div class="sidebar-header">
+        <button class="new-chat-btn" onclick="createNewSession()">+ New Chat</button>
+      </div>
+      <div class="session-list" id="session-list"></div>
+    </div>
+
+    <!-- Model settings panel -->
+    <div id="panel-model" class="sidebar-panel-content" style="display:none;">
+      <div class="sidebar-header">
+        <div style="font-size:13px; color:#cccccc; font-weight:600;">Model Settings</div>
+      </div>
+      <div style="padding:12px;">
+        <div id="model-error"></div>
+        <div id="model-current" style="font-size:11px; color:var(--text-muted); margin-bottom:14px;"></div>
+
+        <div class="login-field">
+          <label>Provider</label>
+          <select id="model-provider" onchange="onProviderChange()" style="width:100%; padding:8px; background:#3c3c3c; color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:13px;">
+            <option value="ollama">Ollama (local)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT)</option>
+          </select>
+        </div>
+
+        <div class="login-field">
+          <label>Model</label>
+          <select id="model-name" style="width:100%; padding:8px; background:#3c3c3c; color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:13px;"></select>
+        </div>
+
+        <div class="login-field">
+          <label><input type="checkbox" id="model-custom-toggle" onchange="toggleCustomModel()" style="width:auto; margin-right:6px;" />Use a custom model name</label>
+          <input type="text" id="model-custom-name" placeholder="e.g. llama3.1:70b" style="display:none; margin-top:6px;" />
+        </div>
+
+        <div class="login-field" id="model-api-key-field" style="display:none;">
+          <label>API Key</label>
+          <input type="password" id="model-api-key" placeholder="sk-..." />
+        </div>
+
+        <button class="btn" style="width:100%; margin-top:8px;" onclick="saveModelSelection()">Save & Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <!-- ───────────────────────── MAIN AREA ───────────────────────── -->
+  <div class="main-area">
+    <div class="tabs">
+      <button class="tab-btn active" data-page="query-page" onclick="switchTab('query-page', this)">
+    <svg class="Ocean-icon" width="14" height="14" viewBox="0 0 24 24" style="margin-right:4px;">
+      <path d="M12 3a9 9 0 1 0 9 9c0-2.8-1.9-4.6-4.6-4.6A4.6 4.6 0 1 0 12 12"
+            fill="none" stroke="url(#OceanSwirl)" stroke-width="2" stroke-linecap="round"/>
+    </svg> Query
+  </button>
+      <button class="tab-btn" data-page="analyzer-page" onclick="switchTab('analyzer-page', this)">📄 Alert Analyzer</button>
+    </div>
+
+    <!-- QUERY PAGE -->
+    <div id="query-page" class="page active">
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-row">
+          <input id="question-input" type="text"
+                 placeholder="Ask about your security data..."
+                 onkeydown="if(event.key==='Enter') sendChatMessage()" />
+          <button class="btn" id="run-btn" onclick="sendChatMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALERT ANALYZER PAGE -->
+    <div id="analyzer-page" class="page">
+      <div class="page-scroll">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div style="font-size:18px; color:#cccccc; font-weight:600;">Alert Analyzer</div>
+              <div style="font-size:12px; color:var(--blue-keyword); margin-top:2px;">Paste Wazuh JSON or fetch the latest live alert, analyze risk, map MITRE ATT&CK, and export a triage report.</div>
+            </div>
+            <div id="risk-badge" class="risk-badge risk-info">
+              <div style="font-size:11px; color:var(--text-muted);">Current Risk</div>
+              <div id="risk-label" style="font-weight:bold;">Informational</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+          <div class="card">
+            <div class="card-header">
+              <span style="color:var(--orange-string)">alert.json</span>
+              <div style="display:flex; gap:8px;">
+                <button class="btn ghost" id="fetch-live-btn" onclick="fetchLiveAlert()">📡 Fetch Live Alert</button>
+                <button class="btn ghost" onclick="loadSample()">Load Sample</button>
+              </div>
+            </div>
+            <div id="fetch-error"></div>
+            <div class="card-body">
+              <textarea id="alert-textarea" rows="24" style="width:100%;" oninput="onAlertChange()"></textarea>
+              <div id="json-error"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="tabs" style="background:var(--bg-sidebar); border:none; padding:8px;">
+              <button class="tab-btn active" data-analyzer-tab="summary" onclick="switchAnalyzerTab('summary', this)">Summary</button>
+              <button class="tab-btn" data-analyzer-tab="mitre" onclick="switchAnalyzerTab('mitre', this)">MITRE</button>
+              <button class="tab-btn" data-analyzer-tab="investigate" onclick="switchAnalyzerTab('investigate', this)">Investigate</button>
+              <button class="tab-btn" data-analyzer-tab="remediate" onclick="switchAnalyzerTab('remediate', this)">Remediate</button>
+            </div>
+            <div class="card-body" style="max-height:640px; overflow:auto;">
+              <div id="analyzer-summary" class="analyzer-tab-content"></div>
+              <div id="analyzer-mitre" class="analyzer-tab-content" style="display:none;"></div>
+              <div id="analyzer-investigate" class="analyzer-tab-content" style="display:none;"></div>
+              <div id="analyzer-remediate" class="analyzer-tab-content" style="display:none;"></div>
+            </div>
+            <div class="card-header" style="justify-content:flex-end;">
+              <button class="btn" onclick="copyReport()" id="copy-btn">📋 Copy Report</button>
+              <button class="btn green" onclick="exportReport()">⬇ Export Report</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+const API_BASE = "http://localhost:5000";
+const STORAGE_KEY = "Ocean_chat_sessions";
+const Ocean_ICON = `<svg class="Ocean-icon" width="18" height="18" viewBox="0 0 24 24">
+  <path d="M12 3a9 9 0 1 0 9 9c0-2.8-1.9-4.6-4.6-4.6A4.6 4.6 0 1 0 12 12"
+        fill="none" stroke="url(#OceanSwirl)" stroke-width="2" stroke-linecap="round"/>
+</svg>`;
+function toggleAdvanced() {
+  const el = document.getElementById("advanced-fields");
+  el.style.display = el.style.display === "none" ? "block" : "none";
+}
+
+async function checkBootStatus() {
+  document.getElementById("loading-status").textContent = "Checking connection…";
+  try {
+    const res = await fetch(`${API_BASE}/api/health`);
+    const data = await res.json();
+    if (data.wazuh_authenticated) {
+      showApp();
+      return;
+    }
+  } catch (e) {
+    // API not reachable yet — fall through to login screen anyway
+  }
+  await prefillLoginForm();
+  document.getElementById("loading-screen").style.display = "none";
+  document.getElementById("login-screen").style.display = "flex";
+}
+
+async function prefillLoginForm() {
+  try {
+    const res = await fetch(`${API_BASE}/api/config`);
+    const cfg = await res.json();
+    document.getElementById("wazuh-username").value = cfg.wazuh_username || "";
+    document.getElementById("indexer-username").value = cfg.indexer_username || "";
+    document.getElementById("manager-url").value = cfg.manager_url || "";
+    document.getElementById("indexer-url").value = cfg.indexer_url || "";
+  } catch (e) {
+    // ignore — user can type values manually
+  }
+}
+
+async function submitLogin() {
+  const btn = document.getElementById("connect-btn");
+  const errEl = document.getElementById("login-error");
+  errEl.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Connecting…";
+
+  const payload = {
+    wazuh_username: document.getElementById("wazuh-username").value.trim(),
+    wazuh_password: document.getElementById("wazuh-password").value,
+    indexer_username: document.getElementById("indexer-username").value.trim(),
+    indexer_password: document.getElementById("indexer-password").value,
+    manager_url: document.getElementById("manager-url").value.trim() || "https://localhost:55000",
+    indexer_url: document.getElementById("indexer-url").value.trim() || "https://localhost:9200",
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Login failed");
+    showApp();
+  } catch (e) {
+    errEl.innerHTML = `<div class="error-banner" style="margin-bottom:10px;">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Connect";
+  }
+}
+
+function showApp() {
+  document.getElementById("loading-screen").style.display = "none";
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app-screen").style.display = "flex";
+  loadSessions();
+  renderSessionList();
+  renderChat();
+  loadSample();
+}
+// ═══════════════════════════ Tab switching ═══════════════════════════
+function switchTab(pageId, btn) {
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.getElementById(pageId).classList.add("active");
+  btn.parentElement.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+function switchAnalyzerTab(tabId, btn) {
+  document.querySelectorAll(".analyzer-tab-content").forEach(c => c.style.display = "none");
+  document.getElementById("analyzer-" + tabId).style.display = "block";
+  btn.parentElement.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+// ═══════════════════════════ Chat sessions (sidebar) ═══════════════════════════
+let sessions = [];       // [{ id, title, messages: [...] }]
+let activeSessionId = null;
+
+function loadSessions() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    sessions = raw ? JSON.parse(raw) : [];
+  } catch {
+    sessions = [];
+  }
+  if (sessions.length === 0) {
+    createNewSession(); // start with one empty chat
+  } else {
+    activeSessionId = sessions[0].id;
+  }
+}
+
+function saveSessions() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+}
+
+function createNewSession() {
+  const session = { id: Date.now().toString(), title: "New chat", messages: [] };
+  sessions.unshift(session);
+  activeSessionId = session.id;
+  saveSessions();
+  renderSessionList();
+  renderChat();
+  switchTab('query-page', document.querySelector('.tab-btn[data-page="query-page"]'));
+}
+
+function selectSession(id) {
+  activeSessionId = id;
+  renderSessionList();
+  renderChat();
+}
+
+function deleteSession(id, event) {
+  event.stopPropagation();
+  sessions = sessions.filter(s => s.id !== id);
+  if (activeSessionId === id) {
+    activeSessionId = sessions.length ? sessions[0].id : null;
+  }
+  if (sessions.length === 0) {
+    createNewSession();
+    return;
+  }
+  saveSessions();
+  renderSessionList();
+  renderChat();
+}
+
+function getActiveSession() {
+  return sessions.find(s => s.id === activeSessionId);
+}
+
+function renderSessionList() {
+  const el = document.getElementById("session-list");
+  if (sessions.length === 0) {
+    el.innerHTML = `<div class="sidebar-empty">No chats yet</div>`;
+    return;
+  }
+  el.innerHTML = sessions.map(s => `
+    <div class="session-item ${s.id === activeSessionId ? 'active' : ''}" onclick="selectSession('${s.id}')">
+      <span class="session-title">${escapeHtml(s.title)}</span>
+      <span class="session-delete" onclick="deleteSession('${s.id}', event)">✕</span>
+    </div>
+  `).join("");
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ═══════════════════════════ Chat rendering ═══════════════════════════
+function renderChat() {
+  const session = getActiveSession();
+  const el = document.getElementById("chat-messages");
+
+  if (!session || session.messages.length === 0) {
+    el.innerHTML = `<div class="chat-empty">Ask a question about your security data to get started.</div>`;
+    return;
+  }
+
+  el.innerHTML = session.messages.map(msg => {
+    if (msg.role === "user") {
+      return `<div class="msg-row user">
+        <div class="msg-bubble">${escapeHtml(msg.text)}</div>
+      </div>`;
+    }
+    if (msg.role === "thinking") {
+      return `<div class="msg-row">
+        <div class="msg-avatar">${Ocean_ICON}</div>
+        <div class="msg-bubble"><span class="thinking">Ocean is thinking</span></div>
+      </div>`;
+    }
+    if (msg.role === "error") {
+      return `<div class="msg-row">
+        <div class="msg-avatar">${Ocean_ICON}</div>
+        <div class="msg-bubble"><div class="error-banner">${escapeHtml(msg.text)}</div></div>
+      </div>`;
+    }
+    return `<div class="msg-row">
+      <div class="msg-avatar">${Ocean_ICON}</div>
+      <div class="msg-bubble">
+        <div>${escapeHtml(msg.summary)}</div>
+        <pre class="sql-block">${escapeHtml(msg.sql)}</pre>
+        <div>${msg.resultHtml}</div>
+      </div>
+    </div>`;
+  }).join("");
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById("question-input");
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = "";
+
+  const session = getActiveSession();
+  if (!session) return;
+
+  // Title the session after the first question asked in it
+  if (session.messages.length === 0) {
+    session.title = question.length > 40 ? question.slice(0, 40) + "…" : question;
+  }
+
+  session.messages.push({ role: "user", text: question });
+  session.messages.push({ role: "thinking" });
+  saveSessions();
+  renderSessionList();
+  renderChat();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question })
+    });
+    session.messages.pop(); // remove "thinking"
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    const resultHtml = buildResultHtml(data.visualization);
+    const rowCount = (data.visualization.records || data.visualization.labels || []).length
+      || (data.visualization.type === "single_value" ? 1 : 0);
+
+    session.messages.push({
+      role: "assistant",
+      summary: data.summary,
+      sql: data.sql,
+      resultHtml
+    });
+  } catch (e) {
+    session.messages.pop(); // remove "thinking"
+    const isNetworkError = e instanceof TypeError;
+    const hint = isNetworkError ? " — is api.py running on port 5000?" : "";
+    session.messages.push({ role: "error", text: e.message + hint });
+  }
+
+  saveSessions();
+  renderSessionList();
+  renderChat();
+}
+
+function buildResultHtml(viz) {
+  if (!viz || viz.type === "empty") {
+    return `<span style="color:var(--teal-value)">No results found.</span>`;
+  }
+
+  if (viz.type === "single_value") {
+    return `<div class="single-value" style="font-size:22px;">${viz.value}</div>`;
+  }
+
+  // Bar, line, and histogram all render through Plotly if a spec is present.
+  if (["bar", "line", "histogram"].includes(viz.type) && viz.plotly) {
+    const id = "plot-" + Math.random().toString(36).slice(2);
+    // The <div> needs to exist in the DOM before Plotly.newPlot() can
+    // target it, so this is scheduled to run right after the HTML
+    // returned here actually gets inserted into the page.
+    setTimeout(() => {
+      Plotly.newPlot(id, viz.plotly.data, viz.plotly.layout, { responsive: true });
+    }, 0);
+    return `<div id="${id}" style="width:100%; height:320px;"></div>`;
+  }
+
+  // Fallback: if for some reason a bar/line/histogram result has no
+  // Plotly spec (e.g. Plotly failed to import server-side), fall back
+  // to the old manual rendering so the app never shows a blank result.
+  if (viz.type === "bar") {
+    const max = Math.max(...viz.values, 1);
+    return viz.labels.map((label, i) => {
+      const pct = (viz.values[i] / max) * 100;
+      return `<div class="bar-row">
+        <div class="bar-label">${escapeHtml(String(label))}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-value">${viz.values[i]}</div>
+      </div>`;
+    }).join("");
+  }
+
+  if (viz.type === "table") {
+    const records = viz.records || [];
+    const columns = viz.columns || (records[0] ? Object.keys(records[0]) : []);
+    if (records.length === 0) return "No rows.";
+    return `<table>
+      <thead><tr>${columns.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+      <tbody>${records.map(r => `<tr>${columns.map(c => `<td>${escapeHtml(String(r[c]))}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>`;
+  }
+
+  return "";
+}
+
+function renderLineChart(viz) {
+  const id = "line-" + Math.random().toString(36).slice(2);
+  setTimeout(() => drawLineChart(id, viz), 0); // canvas must exist in DOM first
+  return `<canvas id="${id}" width="560" height="220" style="max-width:100%;"></canvas>`;
+}
+
+function drawLineChart(canvasId, viz) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height, pad = 40;
+
+  const values = viz.values.map(Number);
+  const labels = viz.labels;
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = "#3c3c3c";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, 10);
+  ctx.lineTo(pad, h - pad);
+  ctx.lineTo(w - 10, h - pad);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#007acc";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = pad + (i / Math.max(values.length - 1, 1)) * (w - pad - 20);
+    const y = (h - pad) - ((v - minV) / range) * (h - pad - 20);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = "#4ec9b0";
+  values.forEach((v, i) => {
+    const x = pad + (i / Math.max(values.length - 1, 1)) * (w - pad - 20);
+    const y = (h - pad) - ((v - minV) / range) * (h - pad - 20);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = "#858585";
+  ctx.font = "11px monospace";
+  ctx.fillText(String(maxV), 4, 16);
+  ctx.fillText(String(minV), 4, h - pad);
+  if (labels.length) {
+    ctx.fillText(String(labels[0]).slice(0, 16), pad, h - 8);
+    ctx.fillText(String(labels[labels.length - 1]).slice(0, 16), w - 140, h - 8);
+  }
+}
+
+// ═══════════════════════════ Alert Analyzer (unchanged logic) ═══════════════════════════
+const sampleAlert = {
+  timestamp: "2026-07-10T15:24:18.684+0000",
+  id: "1694607138.3688437",
+  agent: { id: "002", name: "WIN-ENDPOINT-01", ip: "10.0.12.44" },
+  manager: { name: "wazuh-manager" },
+  rule: {
+    id: "110011",
+    level: 10,
+    description: "Possible suspicious service creation detected",
+    groups: ["windows", "sysmon", "persistence"],
+    mitre: {
+      id: ["T1543.003"],
+      tactic: ["Persistence", "Privilege Escalation"],
+      technique: ["Windows Service"]
+    }
+  },
+  decoder: { name: "windows_eventchannel" },
+  location: "EventChannel",
+  data: {
+    win: {
+      eventdata: {
+        user: "NT AUTHORITY\\SYSTEM",
+        image: "C:\\Windows\\system32\\services.exe",
+        targetObject: "HKLM\\System\\CurrentControlSet\\Services\\ExampleSvc\\ObjectName",
+        eventType: "SetValue"
+      },
+      system: { eventID: "13", channel: "Microsoft-Windows-Sysmon/Operational", computer: "WIN-ENDPOINT-01" }
+    }
+  }
+};
+
+let currentAlert = sampleAlert;
+
+function safeGet(obj, path, fallback = "Not present in alert") {
+  try {
+    const result = path.split(".").reduce((acc, key) => acc && acc[key], obj);
+    if (Array.isArray(result)) return result.join(", ");
+    return (result === undefined || result === null || result === "") ? fallback : result;
+  } catch { return fallback; }
+}
+
+function riskLabel(level) {
+  const n = Number(level || 0);
+  if (n >= 12) return { label: "Critical", cls: "risk-critical" };
+  if (n >= 9) return { label: "High", cls: "risk-high" };
+  if (n >= 6) return { label: "Medium", cls: "risk-medium" };
+  if (n >= 3) return { label: "Low", cls: "risk-low" };
+  return { label: "Informational", cls: "risk-info" };
+}
+
+function loadSample() {
+  document.getElementById("alert-textarea").value = JSON.stringify(sampleAlert, null, 2);
+  onAlertChange();
+}
+
+async function fetchLiveAlert() {
+  const btn = document.getElementById("fetch-live-btn");
+  const errEl = document.getElementById("fetch-error");
+  btn.disabled = true;
+  btn.textContent = "Fetching...";
+  errEl.innerHTML = "";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/latest-alert`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    document.getElementById("alert-textarea").value = JSON.stringify(data, null, 2);
+    onAlertChange();
+  } catch (e) {
+    const isNetworkError = e instanceof TypeError;
+    const hint = isNetworkError ? " — is api.py running on port 5000?" : "";
+    errEl.innerHTML = `<div class="error-banner">${e.message}${hint}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📡 Fetch Live Alert";
+  }
+}
+
+function onAlertChange() {
+  const text = document.getElementById("alert-textarea").value;
+  const jsonErrEl = document.getElementById("json-error");
+  try {
+    currentAlert = JSON.parse(text);
+    jsonErrEl.innerHTML = "";
+  } catch (e) {
+    jsonErrEl.innerHTML = `<div class="error-banner" style="margin-top:8px;">JSON parse error: ${e.message}</div>`;
+    return;
+  }
+  renderAnalyzer();
+}
+
+function renderAnalyzer() {
+  const alert = currentAlert || {};
+  const level = safeGet(alert, "rule.level", "0");
+  const risk = riskLabel(level);
+
+  const badge = document.getElementById("risk-badge");
+  badge.className = "risk-badge " + risk.cls;
+  document.getElementById("risk-label").textContent = risk.label;
+
+  const keyFields = [
+    ["Time", safeGet(alert, "timestamp")],
+    ["Agent", `${safeGet(alert, "agent.name")} / ${safeGet(alert, "agent.ip")} / ID ${safeGet(alert, "agent.id")}`],
+    ["Manager", safeGet(alert, "manager.name")],
+    ["Rule ID", safeGet(alert, "rule.id")],
+    ["Rule Level", safeGet(alert, "rule.level")],
+    ["Rule Description", safeGet(alert, "rule.description")],
+    ["Decoder", safeGet(alert, "decoder.name")],
+    ["Location", safeGet(alert, "location")],
+    ["User", safeGet(alert, "data.win.eventdata.user")],
+    ["Process", safeGet(alert, "data.win.eventdata.image")],
+    ["Source IP", safeGet(alert, "srcip")],
+    ["Destination IP", safeGet(alert, "dstip")],
+    ["File / Registry / Command", safeGet(alert, "data.win.eventdata.targetObject")],
+    ["MITRE Mapping", safeGet(alert, "rule.mitre.id")]
+  ];
+
+  document.getElementById("analyzer-summary").innerHTML = `
+    <div style="margin-bottom:14px; font-size:13px; line-height:1.6;">
+      <span style="color:var(--yellow-func)">${safeGet(alert, "rule.description")}</span> was observed on
+      <span style="color:var(--blue-keyword)">${safeGet(alert, "agent.name")}</span>. Wazuh rule level is
+      ${level}, currently labeled <strong>${risk.label}</strong>.
+    </div>
+    ${keyFields.map(([k, v]) => `<div class="field-row"><div class="field-label">${k}</div><div>${v}</div></div>`).join("")}
+  `;
+
+  const ids = (alert.rule && alert.rule.mitre && alert.rule.mitre.id) || [];
+  const tactics = (alert.rule && alert.rule.mitre && alert.rule.mitre.tactic) || [];
+  const techniques = (alert.rule && alert.rule.mitre && alert.rule.mitre.technique) || [];
+  let mitreRows = [];
+  if (!ids.length && !tactics.length && !techniques.length) {
+    mitreRows = [{ tactic: "Not present", id: "Not present", technique: "Not present", evidence: "No rule.mitre mapping found", confidence: "Low" }];
+  } else {
+    const max = Math.max(ids.length, tactics.length, techniques.length);
+    for (let i = 0; i < max; i++) {
+      mitreRows.push({
+        tactic: tactics[i] || tactics[0] || "Not present",
+        id: ids[i] || ids[0] || "Not present",
+        technique: techniques[i] || techniques[0] || "Not present",
+        evidence: safeGet(alert, "rule.description"),
+        confidence: ids.length ? "High" : "Medium"
+      });
+    }
+  }
+  document.getElementById("analyzer-mitre").innerHTML = `
+    <table>
+      <thead><tr><th>Tactic</th><th>Technique ID</th><th>Technique</th><th>Evidence</th><th>Confidence</th></tr></thead>
+      <tbody>${mitreRows.map(r => `<tr><td style="color:var(--purple)">${r.tactic}</td><td style="color:var(--yellow-func)">${r.id}</td><td style="color:var(--teal-value)">${r.technique}</td><td>${r.evidence}</td><td>${r.confidence}</td></tr>`).join("")}</tbody>
+    </table>
+  `;
+
+  const investigateItems = [
+    "Review related Wazuh alerts for the same host, user, source IP, rule group, and time window.",
+    "Validate whether the user and process activity match expected administration or deployment behavior.",
+    "Check process lineage, command line, parent process, hashes, file path, registry path, and network connections.",
+    "Confirm asset criticality, exposure, business function, and whether the host handles sensitive data.",
+    "Search for the same rule, IOC, process, user, or registry path across other endpoints.",
+    "Preserve relevant logs and endpoint evidence before containment when compromise is plausible."
+  ];
+  document.getElementById("analyzer-investigate").innerHTML =
+    investigateItems.map(i => `<div class="checklist-item">⚠️ <span>${i}</span></div>`).join("");
+
+  const remediateItems = [
+    "Isolate the endpoint if active compromise is suspected.",
+    "Disable, reset, or rotate affected credentials if account misuse is suspected.",
+    "Block confirmed malicious IPs, domains, hashes, or file paths after validation.",
+    "Remove unauthorized persistence only after evidence collection.",
+    "Patch vulnerable software and harden affected configurations.",
+    "Add or tune detections, then validate that the activity no longer appears."
+  ];
+  const falsePositiveItems = [
+    "Was this caused by approved IT administration, software deployment, patching, or monitoring tools?",
+    "Does the account normally perform this action on this asset?",
+    "Is the process path signed, expected, and consistent with normal baselines?",
+    "Are there related suspicious alerts before or after this event?"
+  ];
+  document.getElementById("analyzer-remediate").innerHTML = `
+    <div style="color:#f48771; font-weight:600; margin-bottom:8px;">Containment and Remediation</div>
+    ${remediateItems.map(i => `<div class="checklist-item">⚠️ <span>${i}</span></div>`).join("")}
+    <div style="color:var(--yellow-func); font-weight:600; margin:14px 0 8px;">False Positive Considerations</div>
+    ${falsePositiveItems.map(i => `<div class="checklist-item">⚠️ <span>${i}</span></div>`).join("")}
+  `;
+}
+
+function buildReport() {
+  const alert = currentAlert || {};
+  const level = safeGet(alert, "rule.level", "0");
+  const risk = riskLabel(level);
+  const ids = (alert.rule && alert.rule.mitre && alert.rule.mitre.id) || [];
+  const tactics = (alert.rule && alert.rule.mitre && alert.rule.mitre.tactic) || [];
+  const techniques = (alert.rule && alert.rule.mitre && alert.rule.mitre.technique) || [];
+
+  let mitreLines = "Not present";
+  if (ids.length || tactics.length || techniques.length) {
+    const max = Math.max(ids.length, tactics.length, techniques.length);
+    mitreLines = Array.from({ length: max }).map((_, i) =>
+      `- ${tactics[i] || tactics[0] || "Not present"} | ${ids[i] || ids[0] || "Not present"} | ${techniques[i] || techniques[0] || "Not present"} | Confidence: ${ids.length ? "High" : "Medium"}`
+    ).join("\n");
+  }
+
+  return `Wazuh Alert Analysis
+
+Executive Summary
+${safeGet(alert, "rule.description")} on ${safeGet(alert, "agent.name")} with Wazuh level ${level}. Risk label: ${risk.label}.
+
+MITRE Mapping
+${mitreLines}
+
+Recommended Investigation Steps
+- Review related Wazuh alerts around the same timestamp.
+- Validate user, host, process, command line, file path, registry path, and network context.
+- Confirm whether activity matches approved administration or software deployment.
+- Preserve evidence before remediation if compromise is suspected.
+
+Containment and Remediation
+- Isolate the host if active compromise is suspected.
+- Disable or reset affected credentials if credential misuse is suspected.
+- Remove unauthorized persistence only after evidence collection.
+- Patch, harden, and improve detections as needed.
+`;
+}
+
+function copyReport() {
+  navigator.clipboard.writeText(buildReport()).then(() => {
+    const btn = document.getElementById("copy-btn");
+    const original = btn.textContent;
+    btn.textContent = "✓ Copied";
+    setTimeout(() => { btn.textContent = original; }, 1200);
+  });
+}
+
+function exportReport() {
+  const blob = new Blob([buildReport()], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "wazuh-alert-analysis.txt";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+let modelOptionsCache = {};
+
+function switchSidebarPanel(panel) {
+  document.getElementById("panel-chats").style.display = panel === "chats" ? "flex" : "none";
+  document.getElementById("panel-model").style.display = panel === "model" ? "flex" : "none";
+  document.getElementById("rail-chats").classList.toggle("active", panel === "chats");
+  document.getElementById("rail-model").classList.toggle("active", panel === "model");
+  if (panel === "model") loadModelSettings();
+}
+
+async function loadModelSettings() {
+  try {
+    const res = await fetch(`${API_BASE}/api/model-options`);
+    const data = await res.json();
+    modelOptionsCache = data.options;
+
+    document.getElementById("model-provider").value = data.current.provider;
+    populateModelDropdown(data.current.provider, data.current.model);
+    document.getElementById("model-current").textContent =
+      `Currently using: ${data.current.provider} / ${data.current.model}`;
+    onProviderChange();
+  } catch (e) {
+    document.getElementById("model-error").innerHTML =
+      `<div class="error-banner">Could not load model settings.</div>`;
+  }
+}
+
+function populateModelDropdown(provider, selected) {
+  const select = document.getElementById("model-name");
+  const options = modelOptionsCache[provider] || [];
+  select.innerHTML = options.map(m =>
+    `<option value="${m}" ${m === selected ? "selected" : ""}>${m}</option>`
+  ).join("");
+}
+
+function onProviderChange() {
+  const provider = document.getElementById("model-provider").value;
+  populateModelDropdown(provider, null);
+  document.getElementById("model-api-key-field").style.display =
+    (provider === "anthropic" || provider === "openai") ? "block" : "none";
+}
+
+function toggleCustomModel() {
+  const useCustom = document.getElementById("model-custom-toggle").checked;
+  document.getElementById("model-custom-name").style.display = useCustom ? "block" : "none";
+  document.getElementById("model-name").style.display = useCustom ? "none" : "block";
+}
+
+async function saveModelSelection() {
+  const provider = document.getElementById("model-provider").value;
+  const useCustom = document.getElementById("model-custom-toggle").checked;
+  const model = useCustom
+    ? document.getElementById("model-custom-name").value.trim()
+    : document.getElementById("model-name").value;
+  const apiKey = document.getElementById("model-api-key").value.trim();
+  const errEl = document.getElementById("model-error");
+  errEl.innerHTML = "";
+
+  if (!model) {
+    errEl.innerHTML = `<div class="error-banner">Please select or enter a model name.</div>`;
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/set-model`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, model, api_key: apiKey || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to update model");
+    document.getElementById("model-current").textContent = `Currently using: ${provider} / ${model}`;
+  } catch (e) {
+    errEl.innerHTML = `<div class="error-banner">${e.message}</div>`;
+  }
+}
+// ═══════════════════════════ Init ═══════════════════════════
+checkBootStatus();
+</script>
+
+</body>
+</html>
